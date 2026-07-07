@@ -43,8 +43,12 @@ pub fn run() {
             tray.on_tray_icon_event(|tray, event| {
                 if let tauri::tray::TrayIconEvent::Click { .. } = event {
                     if let Some(window) = tray.app_handle().get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.hide();
+                        } else {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
                     }
                 }
             });
