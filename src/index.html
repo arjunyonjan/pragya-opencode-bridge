@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>opencode-bridge — Jarvis HUD</title>
+  <link rel="stylesheet" href="style.css" />
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div class="scanlines"></div>
+
+  <header>
+    <h1><span class="cyan">◆</span> opencode-bridge <span class="dim">v0.2.0</span></h1>
+    <div class="hud-status" id="hud-status">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">initializing...</span>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel" id="panel-health">
+      <div class="panel-header">
+        <span class="panel-icon">◈</span>
+        <span>DAEMON HEALTH</span>
+        <button class="panel-refresh" id="refresh-health">↻</button>
+        <label class="toggle-label" title="TTS heartbeat every 30s">
+          <input type="checkbox" id="heartbeat-toggle" />
+          <span class="toggle-text">♡</span>
+        </label>
+      </div>
+      <div class="panel-body" id="health-body">
+        <div class="loading">scanning services...</div>
+      </div>
+      <div class="panel-footer">
+        <button class="panel-btn" id="autostart-btn">Autostart: --</button>
+        <span class="status-text" id="autostart-status"></span>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-tts">
+      <div class="panel-header">
+        <span class="panel-icon">◉</span>
+        <span>VOICE (TTS)</span>
+      </div>
+      <div class="panel-body">
+        <div class="input-row">
+          <input type="text" id="tts-input" placeholder="Say something, Sir..." />
+          <button id="tts-speak">SPEAK</button>
+        </div>
+        <div class="input-row" style="flex-wrap:wrap;gap:4px">
+          <select id="tts-backend" style="flex:1;min-width:80px">
+            <option value="kitten">kitten</option>
+            <option value="kokoro">kokoro</option>
+          </select>
+          <select id="tts-preset" style="flex:1;min-width:80px">
+            <option value="jarvis">jarvis</option>
+            <option value="subtle">subtle</option>
+            <option value="heavy">heavy</option>
+            <option value="bassy">bassy</option>
+            <option value="none">none</option>
+          </select>
+          <input type="number" id="tts-speed" value="1.25" min="0.5" max="3.0" step="0.05" style="width:60px" title="Speed" />
+          <input type="text" id="tts-fx" placeholder="fx" style="width:60px" title="FX: flanger,chorus,reverb,tremolo,bass" />
+          <span id="tts-status" class="status-text"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-opencode">
+      <div class="panel-header">
+        <span class="panel-icon">⌘</span>
+        <span>OPENCODE</span>
+        <span id="stream-indicator" class="status-text"></span>
+        <button class="panel-refresh" id="clear-history-btn" title="Clear history" style="font-size:10px;padding:2px 6px">✕</button>
+        <label class="toggle-label" title="Toggle history">
+          <input type="checkbox" id="history-toggle" />
+          <span class="toggle-text">◷</span>
+        </label>
+      </div>
+      <div class="panel-body">
+        <div class="input-row">
+          <input type="text" id="opencode-input" placeholder="Query opencode..." />
+          <button id="opencode-send">SEND</button>
+          <label class="toggle-label" title="Stream output in real-time">
+            <input type="checkbox" id="stream-toggle" checked />
+            <span class="toggle-text">⤵</span>
+          </label>
+        </div>
+        <pre id="opencode-output" class="output-box"></pre>
+        <div id="opencode-history" class="output-box" style="display:none"></div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-cascade">
+      <div class="panel-header">
+        <span class="panel-icon">⚙</span>
+        <span>CASCADE</span>
+        <span id="cascade-status" class="status-text"></span>
+      </div>
+      <div class="panel-body">
+        <div class="input-row">
+          <input type="text" id="cascade-input" placeholder="Cascade query..." />
+          <button id="cascade-send">QUERY</button>
+        </div>
+        <div class="input-row" style="gap:12px">
+          <span id="cascade-model" class="status-text"></span>
+        </div>
+        <pre id="cascade-output" class="output-box"></pre>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-rag">
+      <div class="panel-header">
+        <span class="panel-icon">◇</span>
+        <span>RAG SEARCH</span>
+      </div>
+      <div class="panel-body">
+        <div class="input-row">
+          <input type="text" id="rag-input" placeholder="Search knowledge base..." />
+          <button id="rag-search-btn">SEARCH</button>
+        </div>
+        <div id="rag-results" class="output-box"></div>
+        <div class="input-row" style="margin-top:8px">
+          <input type="text" id="rag-ingest-input" placeholder="Path to ingest..." />
+          <button id="rag-ingest-btn">INGEST</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-wsl">
+      <div class="panel-header">
+        <span class="panel-icon">⎔</span>
+        <span>WSL TERMINAL</span>
+      </div>
+      <div class="panel-body">
+        <div class="input-row">
+          <input type="text" id="wsl-input" placeholder="$ wsl command..." />
+          <button id="wsl-exec-btn">RUN</button>
+        </div>
+        <pre id="wsl-output" class="output-box"></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span class="dim">WSL bridge • TTS • RAG • cascade • ollama</span>
+    <span id="footer-time"></span>
+  </footer>
+</body>
+</html>

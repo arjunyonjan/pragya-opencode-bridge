@@ -1,0 +1,11 @@
+{
+  "identifier": "default",
+  "description": "Default capabilities for opencode-bridge",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "shell:allow-open",
+    "autostart:default"
+  ]
+}
