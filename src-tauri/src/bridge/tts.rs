@@ -20,7 +20,7 @@ pub async fn speak_with(text: &str, backend: &str, preset: &str, speed: f64, fx:
         escaped, speed, preset, backend, fx_flag
     );
 
-    let result = super::wsl::execute(&cmd);
+    let result = super::shell::execute(&cmd);
     let elapsed = start.elapsed().as_millis() as u64;
 
     match result {
@@ -34,7 +34,7 @@ pub async fn speak_with(text: &str, backend: &str, preset: &str, speed: f64, fx:
 }
 
 pub fn health() -> bool {
-    super::wsl::execute("bash -l -c \"fuche-tts --version\" 2>/dev/null")
+    super::shell::execute("bash -l -c \"fuche-tts --version\" 2>/dev/null")
         .map(|o| o.success)
         .unwrap_or(false)
 }

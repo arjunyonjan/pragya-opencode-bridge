@@ -39,8 +39,9 @@ pub struct DiskHealth {
     pub usage_pct: f64,
 }
 
+#[cfg(not(target_os = "android"))]
 pub async fn check_all() -> DaemonHealth {
-    let wsl_ok = super::wsl::health_check();
+    let wsl_ok = super::shell::health_check();
     let tts_ok = super::tts::health();
 
     let (oc, cc, ol, gpu, disk) = tokio::join!(
@@ -58,26 +59,58 @@ pub async fn check_all() -> DaemonHealth {
     }
 }
 
+#[cfg(target_os = "android")]
+pub async fn check_all() -> DaemonHealth {
+    let (oc, cc, ol, gpu, disk) = tokio::join!(
+        opencode_check(), cascade_check(), ollama_check(), gpu_check(), disk_check()
+    );
+
+    let overall = if oc.status == HealthStatus::Healthy { HealthStatus::Healthy } else { HealthStatus::Degraded };
+
+    DaemonHealth {
+        wsl: ServiceHealth { status: HealthStatus::Down, label: "WSL".into(), detail: "Not available on Android".into() },
+        tts: ServiceHealth { status: HealthStatus::Down, label: "TTS".into(), detail: "Not available on Android".into() },
+        opencode: oc, cascade: cc, ollama: ol, gpu, disk, overall,
+    }
+}
+
 async fn opencode_check() -> ServiceHealth {
     let s = super::opencode::check_status();
     ServiceHealth { status: if s.installed { HealthStatus::Healthy } else { HealthStatus::Down }, label: "Opencode".into(), detail: if s.installed { format!("v{}", s.version) } else { "Not installed".into() } }
 }
 
+#[cfg(not(target_os = "android"))]
 async fn cascade_check() -> ServiceHealth {
     let s = super::cascade::check_status();
     ServiceHealth { status: if s.available { HealthStatus::Healthy } else { HealthStatus::Degraded }, label: "Cascade".into(), detail: if s.available { "cascade.py found" } else { "Not available" }.into() }
 }
 
+#[cfg(target_os = "android")]
+async fn cascade_check() -> ServiceHealth {
+    ServiceHealth { status: HealthStatus::Down, label: "Cascade".into(), detail: "Not available on Android".into() }
+}
+
+#[cfg(not(target_os = "android"))]
 async fn ollama_check() -> ServiceHealth {
-    let r = super::wsl::execute("curl -s -o /dev/null -w '%{http_code}' http://localhost:11434/api/tags 2>/dev/null || echo '000'");
+    let r = super::shell::execute("curl -s -o /dev/null -w '%{http_code}' http://localhost:11434/api/tags 2>/dev/null || echo '000'");
     match r {
         Ok(out) if out.stdout.trim() == "200" => ServiceHealth { status: HealthStatus::Healthy, label: "Ollama".into(), detail: "API responding".into() },
         _ => ServiceHealth { status: HealthStatus::Degraded, label: "Ollama".into(), detail: "Not reachable".into() },
     }
 }
 
+#[cfg(target_os = "android")]
+async fn ollama_check() -> ServiceHealth {
+    let r = super::shell::execute("curl -s -o /dev/null -w '%{http_code}' http://localhost:11434/api/tags || echo '000'");
+    match r {
+        Ok(out) if out.stdout.trim() == "200" => ServiceHealth { status: HealthStatus::Healthy, label: "Ollama".into(), detail: "API responding".into() },
+        _ => ServiceHealth { status: HealthStatus::Degraded, label: "Ollama".into(), detail: "Not reachable".into() },
+    }
+}
+
+#[cfg(not(target_os = "android"))]
 async fn gpu_check() -> GpuHealth {
-    let r = super::wsl::execute("nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null || echo 'no gpu'");
+    let r = super::shell::execute("nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader,nounits 2>/dev/null || echo 'no gpu'");
     match r {
         Ok(out) if out.stdout != "no gpu\n" => {
             let p: Vec<&str> = out.stdout.trim().split(", ").collect();
@@ -87,8 +120,29 @@ async fn gpu_check() -> GpuHealth {
     }
 }
 
+#[cfg(target_os = "android")]
+async fn gpu_check() -> GpuHealth {
+    GpuHealth { status: HealthStatus::Degraded, gpu_name: "N/A".into(), vram_used_mb: 0, vram_total_mb: 0, power_capped: false }
+}
+
+#[cfg(not(target_os = "android"))]
 async fn disk_check() -> DiskHealth {
-    let r = super::wsl::execute("df -h / | tail -1 | awk '{print $2, $4, $5}'");
+    let r = super::shell::execute("df -h / | tail -1 | awk '{print $2, $4, $5}'");
+    match r {
+        Ok(out) => {
+            let p: Vec<&str> = out.stdout.trim().split_whitespace().collect();
+            let total = p.first().and_then(|s| parse_size(s)).unwrap_or(0.0);
+            let free = p.get(1).and_then(|s| parse_size(s)).unwrap_or(0.0);
+            let usage = p.get(2).and_then(|s| s.trim_end_matches('%').parse().ok()).unwrap_or(0.0);
+            DiskHealth { status: if usage > 90.0 { HealthStatus::Degraded } else { HealthStatus::Healthy }, free_gb: free, total_gb: total, usage_pct: usage }
+        }
+        _ => DiskHealth { status: HealthStatus::Degraded, free_gb: 0.0, total_gb: 0.0, usage_pct: 0.0 },
+    }
+}
+
+#[cfg(target_os = "android")]
+async fn disk_check() -> DiskHealth {
+    let r = super::shell::execute("df -h /data | tail -1 | awk '{print $2, $4, $5}'");
     match r {
         Ok(out) => {
             let p: Vec<&str> = out.stdout.trim().split_whitespace().collect();

@@ -5,6 +5,24 @@ use bridge::{opencode, health, ocr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
+
+struct OcrSem(Mutex<u32>);
+impl OcrSem {
+    fn new(n: u32) -> Self { OcrSem(Mutex::new(n)) }
+    fn acquire(&self) -> OcrGuard<'_> {
+        loop {
+            let mut count = self.0.lock().unwrap();
+            if *count > 0 { *count -= 1; return OcrGuard(&self.0); }
+            drop(count);
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+}
+struct OcrGuard<'a>(&'a Mutex<u32>);
+impl Drop for OcrGuard<'_> {
+    fn drop(&mut self) { *self.0.lock().unwrap() += 1; }
+}
 use tauri::{AppHandle, Emitter, Manager, State};
 // ManagerExt used in commands.rs
 use serde::{Deserialize, Serialize};
@@ -113,30 +131,44 @@ pub fn run() {
                 }
             });
 
-            // Screenshot watcher — lazy 10s loop with halt mode, no TTS noise
+            // Screenshot watcher — lazy 10s loop, max 2 concurrent OCR tasks
             let h3 = app.handle().clone();
+            let semaphore = std::sync::Arc::new(OcrSem::new(2));
             std::thread::spawn(move || {
+                #[cfg(target_os = "android")]
+                let ss_dir = "/sdcard/Pictures/Screenshots";
+                #[cfg(not(target_os = "android"))]
                 let ss_dir = r"C:\Users\ACER\OneDrive\ai-screenshots";
+                #[cfg(target_os = "android")]
+                let log_path = "/storage/emulated/0/Android/data/com.fuche.pragya/files/auto-ocr.md";
+                #[cfg(not(target_os = "android"))]
                 let log_path = r"C:\Users\ACER\OneDrive\Obsidian Vault\system\auto-ocr.md";
                 let mut processed: std::collections::HashSet<String> = std::fs::read_to_string(log_path)
                     .ok().map(|s| s.lines().filter_map(|l| l.split('|').nth(1)).map(|s| s.trim().to_string()).collect())
                     .unwrap_or_default();
                 println!("OCR: {} files known", processed.len());
                 loop {
-                    for entry in std::fs::read_dir(ss_dir).into_iter().flatten().flatten() {
-                        let path = entry.path();
-                        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-                        if !["jpg", "jpeg", "png"].contains(&ext.as_str()) { continue; }
-                        let fname = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                        let fname_clone = fname.clone();
-                        if !processed.insert(fname) { continue; }
-                        let h = h3.clone();
-                        let p = path.to_string_lossy().to_string();
-                        std::thread::spawn(move || {
-                            let r = ocr::process_screenshot(&p);
-                            let _ = h.emit("ocr-result", &r);
-                            if r.success { println!("OCR done: {fname_clone}"); }
-                        });
+                    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        for entry in std::fs::read_dir(ss_dir).into_iter().flatten().flatten() {
+                            let path = entry.path();
+                            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                            if !["jpg", "jpeg", "png"].contains(&ext.as_str()) { continue; }
+                            let fname = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                            let fname2 = fname.clone();
+                            if !processed.insert(fname) { continue; }
+                            let h = h3.clone();
+                            let p = path.to_string_lossy().to_string();
+                            let sem = semaphore.clone();
+                            std::thread::spawn(move || {
+                                let _g = sem.acquire();
+                                let r = ocr::process_screenshot(&p);
+                                let _ = h.emit("ocr-result", &r);
+                                if r.success { println!("OCR done: {fname2}"); }
+                            });
+                        }
+                    }));
+                    if let Err(e) = r {
+                        eprintln!("OCR watcher crashed: {:?}, restarting", e);
                     }
                     std::thread::sleep(std::time::Duration::from_secs(10));
                 }
@@ -145,15 +177,18 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::wsl_exec,
+            commands::shell_exec,
             commands::tts_speak,
             commands::tts_speak_with,
             commands::opencode_status,
             commands::opencode_query,
             commands::get_opencode_history,
             commands::clear_opencode_history,
+            #[cfg(not(target_os = "android"))]
             commands::cascade_query,
+            #[cfg(not(target_os = "android"))]
             commands::rag_search,
+            #[cfg(not(target_os = "android"))]
             commands::rag_ingest,
             commands::health_check,
             commands::get_autostart,

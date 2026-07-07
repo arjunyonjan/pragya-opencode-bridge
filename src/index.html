@@ -100,7 +100,7 @@
       </div>
       <div class="panel-body">
         <div class="input-row">
-          <input type="text" id="cascade-input" placeholder="Cascade query..." />
+          <input type="text" id="cascade-input" placeholder="Cascade (desktop only)" />
           <button id="cascade-send">QUERY</button>
         </div>
         <div class="input-row" style="gap:12px">
@@ -117,7 +117,7 @@
       </div>
       <div class="panel-body">
         <div class="input-row">
-          <input type="text" id="rag-input" placeholder="Search knowledge base..." />
+          <input type="text" id="rag-input" placeholder="RAG (desktop only)" />
           <button id="rag-search-btn">SEARCH</button>
         </div>
         <div id="rag-results" class="output-box"></div>
@@ -131,11 +131,11 @@
     <section class="panel" id="panel-wsl">
       <div class="panel-header">
         <span class="panel-icon">⎔</span>
-        <span>WSL TERMINAL</span>
+        <span>SHELL TERMINAL</span>
       </div>
       <div class="panel-body">
         <div class="input-row">
-          <input type="text" id="wsl-input" placeholder="$ wsl command..." />
+          <input type="text" id="wsl-input" placeholder="$ shell command..." />
           <button id="wsl-exec-btn">RUN</button>
         </div>
         <pre id="wsl-output" class="output-box"></pre>
@@ -157,7 +157,7 @@
   </main>
 
   <footer>
-    <span class="dim">WSL bridge • TTS • RAG • cascade • ollama</span>
+    <span class="dim">shell bridge • TTS • opencode • OCR</span>
     <span id="footer-time"></span>
   </footer>
 </body>

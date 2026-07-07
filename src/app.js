@@ -153,7 +153,7 @@ function initCascade() {
       const r = await invoke('cascade_query', { query: q });
       output.textContent = r.output || r.error || '(empty)';
     } catch (err) {
-      output.textContent = `Error: ${err}`;
+      output.textContent = 'Not available on this platform';
     }
     status.textContent = '';
   }
@@ -191,7 +191,7 @@ function initRag() {
         results.innerHTML = `<div class="dim">${r.error || 'no results'}</div>`;
       }
     } catch (err) {
-      results.innerHTML = `<div class="dim">Error: ${err}</div>`;
+      results.innerHTML = '<div class="dim">Not available on this platform</div>';
     }
   });
 
@@ -203,7 +203,7 @@ function initRag() {
       const r = await invoke('rag_ingest', { path: p });
       ingestBtn.textContent = r.success ? 'done' : `error: ${r.error}`;
     } catch (err) {
-      ingestBtn.textContent = 'error';
+      ingestBtn.textContent = 'Not available on this platform';
     }
     setTimeout(() => { ingestBtn.textContent = 'INGEST'; }, 2000);
   });
@@ -221,7 +221,7 @@ function initWsl() {
     if (!cmd) return;
     output.textContent = '$ ' + cmd + '\n';
     try {
-      const r = await invoke('wsl_exec', { command: cmd });
+      const r = await invoke('shell_exec', { command: cmd });
       output.textContent += r.stdout || r.stderr || '(empty)';
     } catch (err) {
       output.textContent += `Error: ${err}`;

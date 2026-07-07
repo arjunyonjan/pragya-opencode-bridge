@@ -1,21 +1,44 @@
-use crate::bridge::{wsl, tts, opencode, rag, cascade, health};
+use crate::bridge::{shell, tts, opencode, health};
+#[cfg(not(target_os = "android"))]
+use crate::bridge::{rag, cascade};
 use crate::{AppState, HealthReport, ServiceReport, chrono_now, update_tray, HEARTBEAT_ACTIVE, save_settings, Settings};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
-pub fn wsl_exec(command: String) -> Result<wsl::WslOutput, String> {
-    wsl::execute(&command)
+pub fn shell_exec(command: String) -> Result<shell::ShellOutput, String> {
+    shell::execute(&command)
 }
 
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub fn shell_exec(_command: String) -> Result<shell::ShellOutput, String> {
+    Err("WSL not available on Android".into())
+}
+
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn tts_speak(text: String) -> tts::TtsResult {
     tts::speak(&text).await
 }
 
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn tts_speak(_text: String) -> tts::TtsResult {
+    tts::TtsResult { success: false, message: "TTS not available on Android".into(), elapsed_ms: 0 }
+}
+
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn tts_speak_with(text: String, backend: Option<String>, preset: Option<String>, speed: Option<f64>, fx: Option<String>) -> tts::TtsResult {
     tts::speak_with(&text, &backend.unwrap_or("kitten".into()), &preset.unwrap_or("jarvis".into()), speed.unwrap_or(1.25), &fx.unwrap_or_default()).await
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub async fn tts_speak_with(_text: String, _backend: Option<String>, _preset: Option<String>, _speed: Option<f64>, _fx: Option<String>) -> tts::TtsResult {
+    tts::TtsResult { success: false, message: "TTS not available on Android".into(), elapsed_ms: 0 }
 }
 
 #[tauri::command]
@@ -50,16 +73,19 @@ pub fn clear_opencode_history(state: State<'_, AppState>) {
     if let Ok(mut h) = state.opencode_history.lock() { h.clear(); }
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn cascade_query(query: String) -> cascade::CascadeResult {
     cascade::run_query(&query).await
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn rag_search(query: String, limit: Option<usize>) -> rag::RagResult {
     rag::search(&query, limit).await
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 pub async fn rag_ingest(path: String) -> rag::RagResult {
     rag::ingest(&path).await

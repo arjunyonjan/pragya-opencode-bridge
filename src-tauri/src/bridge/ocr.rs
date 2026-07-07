@@ -9,6 +9,7 @@ pub struct OcrResult {
     pub success: bool,
 }
 
+#[cfg(not(target_os = "android"))]
 fn win_to_wsl(path: &str) -> String {
     let p = path.replace('\\', "/");
     if let Some(rest) = p.strip_prefix("C:") {
@@ -20,9 +21,15 @@ fn win_to_wsl(path: &str) -> String {
     }
 }
 
+#[cfg(target_os = "android")]
+fn win_to_wsl(path: &str) -> String {
+    path.to_string()
+}
+
+#[cfg(not(target_os = "android"))]
 pub fn run_tesseract(path: &str) -> String {
     let wsl = win_to_wsl(path);
-    match super::wsl::execute_timeout(&["tesseract", &wsl, "stdout", "-l", "eng"], 10) {
+    match super::shell::execute_timeout(&["tesseract", &wsl, "stdout", "-l", "nep+eng"], 15) {
         Ok(out) => {
             let lines: Vec<&str> = out.stdout.lines().filter(|l| !l.trim().is_empty()).collect();
             if lines.is_empty() { return String::new(); }
@@ -33,17 +40,56 @@ pub fn run_tesseract(path: &str) -> String {
     }
 }
 
+#[cfg(target_os = "android")]
+pub fn run_tesseract(path: &str) -> String {
+    match std::process::Command::new("tesseract")
+        .arg(path)
+        .arg("stdout")
+        .arg("-l")
+        .arg("eng")
+        .output()
+    {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let lines: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+            if lines.is_empty() { return String::new(); }
+            let text = lines.join(" ");
+            if text.len() > 500 { text[..500].to_string() } else { text }
+        }
+        Err(e) => { println!("Tesseract failed: {e}"); String::new() }
+    }
+}
+
+#[cfg(not(target_os = "android"))]
 pub fn run_moondream(path: &str) -> String {
     let wsl = win_to_wsl(path);
     let start = std::time::Instant::now();
     let cmd = format!("ollama run moondream 'describe {}' 2>/dev/null", wsl);
-    let result = match super::wsl::execute_timeout(&["bash", "-l", "-c", &cmd], 10) {
+    let result = match super::shell::execute_timeout(&["bash", "-l", "-c", &cmd], 10) {
         Ok(out) => {
             let cleaned = strip_ansi(&out.stdout);
             let desc = cleaned.trim().to_string();
             if desc.len() > 300 { desc[..300].to_string() } else { desc }
         }
         Err(e) => { println!("Moondream timeout: {e}"); String::new() }
+    };
+    println!("moondream took {:?}", start.elapsed());
+    result
+}
+
+#[cfg(target_os = "android")]
+pub fn run_moondream(path: &str) -> String {
+    let start = std::time::Instant::now();
+    let result = match std::process::Command::new("ollama")
+        .args(["run", "moondream", &format!("describe {}", path)])
+        .output()
+    {
+        Ok(out) => {
+            let cleaned = strip_ansi(&String::from_utf8_lossy(&out.stdout));
+            let desc = cleaned.trim().to_string();
+            if desc.len() > 300 { desc[..300].to_string() } else { desc }
+        }
+        Err(e) => { println!("Moondream failed: {e}"); String::new() }
     };
     println!("moondream took {:?}", start.elapsed());
     result
@@ -81,6 +127,28 @@ pub fn log_result(file: &str, ocr: &str, moondream: &str) {
     }
 }
 
+#[cfg(not(target_os = "android"))]
+pub fn process_screenshot(path: &str) -> OcrResult {
+    let file = std::path::Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let start = std::time::Instant::now();
+    let ocr_text = run_tesseract(path);
+    let moondream = run_moondream(path);
+    let elapsed = start.elapsed().as_secs();
+    let timestamp = chrono_now();
+    let success = !ocr_text.is_empty() || !moondream.is_empty();
+
+    println!("Processed {} in {}s — OCR:{}, Moon:{}", file, elapsed, !ocr_text.is_empty(), !moondream.is_empty());
+
+    log_result(&file, &ocr_text, &moondream);
+
+    OcrResult { file, ocr_text, moondream, timestamp, success }
+}
+
+#[cfg(target_os = "android")]
 pub fn process_screenshot(path: &str) -> OcrResult {
     let file = std::path::Path::new(path)
         .file_name()
