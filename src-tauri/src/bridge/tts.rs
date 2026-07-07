@@ -37,4 +37,7 @@ pub fn health() -> bool {
     super::shell::execute("bash -l -c \"fuche-tts --version\" 2>/dev/null")
         .map(|o| o.success)
         .unwrap_or(false)
+    || super::shell::execute("curl -s -o /dev/null -w '%{http_code}' http://localhost:8750 2>/dev/null")
+        .map(|o| o.stdout.trim() == "200")
+        .unwrap_or(false)
 }

@@ -111,7 +111,7 @@ pub fn run() {
                 opencode_history: Mutex::new(Vec::new()),
             });
 
-            // Heartbeat loop
+            // Heartbeat loop with auto-recovery
             let h = app.handle().clone();
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
@@ -119,6 +119,16 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(30));
                     if !HEARTBEAT_ACTIVE.load(Ordering::Relaxed) { continue; }
                     rt.block_on(heartbeat_loop(&h));
+                }
+            });
+
+            // Auto-recovery loop — restarts dead services every 60s
+            let h_auto = app.handle().clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                    rt.block_on(auto_recovery());
                 }
             });
 
@@ -277,4 +287,30 @@ async fn heartbeat_loop(handle: &AppHandle) {
         health::HealthStatus::Down => "\u{1f534}",
     };
     let _ = handle.emit("heartbeat", label);
+}
+
+/// Auto-recovery: restarts dead services
+async fn auto_recovery() {
+    // Ollama
+    let ollama_up = bridge::shell::execute("curl -s -o /dev/null -w '%{http_code}' http://localhost:11434/api/tags 2>/dev/null || echo '000'")
+        .map(|o| o.stdout.trim() == "200").unwrap_or(false);
+    if !ollama_up {
+        println!("Auto-recovery: starting Ollama...");
+        let _ = bridge::shell::execute("bash -l -c 'ollama serve > /dev/null 2>&1 &'");
+    }
+
+    // Search daemon
+    let daemon_up = bridge::shell::execute("test -S /tmp/search-daemon.sock && echo ok || echo no")
+        .map(|o| o.stdout.trim() == "ok").unwrap_or(false);
+    if !daemon_up {
+        println!("Auto-recovery: starting search daemon...");
+        let _ = bridge::shell::execute("bash -l -c 'cd ~/fuche-coder && source venv/bin/activate && setsid python3 -u search.py --daemon > /dev/null 2>&1 &'");
+    }
+
+    // TTS daemon
+    let tts_up = bridge::shell::execute("curl -s -o /dev/null -w '%{http_code}' http://localhost:8750 2>/dev/null || echo '000'")
+        .map(|o| o.stdout.trim() == "200").unwrap_or(false);
+    if !tts_up {
+        println!("Auto-recovery: TTS daemon not responding (OK if not needed)");
+    }
 }

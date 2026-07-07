@@ -1,13 +1,13 @@
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+
 let ocrCount = 0;
 
 document.addEventListener('DOMContentLoaded', () => {
   // Close button
   document.getElementById('close-btn')?.addEventListener('click', () => {
-    try {
-      if (typeof __TAURI__ !== 'undefined' && __TAURI__.window) {
-        __TAURI__.window.getCurrent().close();
-      }
-    } catch(e) {}
+    try { getCurrentWindow().close(); } catch(e) {}
   });
 
   initTTS();
@@ -289,19 +289,4 @@ async function refreshHealth(showLoading) {
   } catch (err) {
     body.innerHTML = `<div class="dim">Error: ${err}</div>`;
   }
-}
-
-// ── Event helpers (mock Tauri for dev) ──
-
-function listen(event, cb) {
-  if (typeof __TAURI__ !== 'undefined' && __TAURI__.event) {
-    __TAURI__.event.listen(event, cb);
-  }
-}
-
-function invoke(cmd, args) {
-  if (typeof __TAURI__ !== 'undefined' && __TAURI__.core) {
-    return __TAURI__.core.invoke(cmd, args);
-  }
-  return Promise.reject('Tauri API not available');
 }

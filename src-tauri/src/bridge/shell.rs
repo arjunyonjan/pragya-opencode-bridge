@@ -15,7 +15,7 @@ pub struct ShellOutput {
 }
 
 pub fn execute(command: &str) -> Result<ShellOutput, String> {
-    exec_args_internal(&["bash", "-l", "-c", command], None)
+    exec_args_internal(&["bash", "-l", "-c", command], Some(Duration::from_secs(10)))
 }
 
 pub fn execute_timeout(args: &[&str], secs: u64) -> Result<ShellOutput, String> {
