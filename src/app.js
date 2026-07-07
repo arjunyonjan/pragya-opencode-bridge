@@ -266,6 +266,50 @@ function initAutostart() {
       btn.textContent = `Autostart: ${enabled ? 'ON' : 'OFF'}`;
     });
   });
+
+  // Restart button
+  document.getElementById('restart-btn').addEventListener('click', () => {
+    invoke('restart_services').then(r => {
+      refreshHealth(false);
+    });
+  });
+
+  // Settings button + modal
+  const overlay = document.getElementById('settings-overlay');
+  document.getElementById('settings-btn').addEventListener('click', () => {
+    invoke('get_app_settings').then(s => {
+      document.getElementById('set-heartbeat').checked = s.heartbeat_active;
+      document.getElementById('set-hb-interval').value = s.heartbeat_interval_secs;
+      document.getElementById('set-rec-interval').value = s.recovery_interval_secs;
+      document.getElementById('set-fuche-dir').value = s.fuche_coder_dir;
+      document.getElementById('set-ss-dir').value = s.screenshot_dir;
+      document.getElementById('set-ollama-port').value = s.ollama_port;
+      document.getElementById('set-tts-port').value = s.tts_port;
+      document.getElementById('set-whisper-port').value = s.whisper_port;
+    });
+    overlay.style.display = 'flex';
+  });
+
+  document.getElementById('settings-close').addEventListener('click', () => {
+    overlay.style.display = 'none';
+  });
+
+  document.getElementById('settings-save').addEventListener('click', () => {
+    const settings = {
+      heartbeat_active: document.getElementById('set-heartbeat').checked,
+      heartbeat_interval_secs: parseInt(document.getElementById('set-hb-interval').value),
+      recovery_interval_secs: parseInt(document.getElementById('set-rec-interval').value),
+      fuche_coder_dir: document.getElementById('set-fuche-dir').value,
+      screenshot_dir: document.getElementById('set-ss-dir').value,
+      ollama_port: parseInt(document.getElementById('set-ollama-port').value),
+      tts_port: parseInt(document.getElementById('set-tts-port').value),
+      whisper_port: parseInt(document.getElementById('set-whisper-port').value),
+    };
+    invoke('set_app_settings', { settings }).then(() => {
+      document.getElementById('settings-status').textContent = 'saved';
+      setTimeout(() => { document.getElementById('settings-status').textContent = ''; }, 2000);
+    });
+  });
 }
 
 async function refreshHealth(showLoading) {

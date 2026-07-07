@@ -32,10 +32,28 @@ pub static HEARTBEAT_ACTIVE: AtomicBool = AtomicBool::new(true);
 #[derive(Serialize, Deserialize)]
 pub struct Settings {
     pub heartbeat_active: bool,
+    pub heartbeat_interval_secs: u64,
+    pub recovery_interval_secs: u64,
+    pub fuche_coder_dir: String,
+    pub screenshot_dir: String,
+    pub ollama_port: u16,
+    pub tts_port: u16,
+    pub whisper_port: u16,
 }
 
 impl Default for Settings {
-    fn default() -> Self { Self { heartbeat_active: true } }
+    fn default() -> Self {
+        Self {
+            heartbeat_active: true,
+            heartbeat_interval_secs: 30,
+            recovery_interval_secs: 60,
+            fuche_coder_dir: "~/fuche-coder".into(),
+            screenshot_dir: r"C:\Users\ACER\OneDrive\ai-screenshots".into(),
+            ollama_port: 11434,
+            tts_port: 8750,
+            whisper_port: 8760,
+        }
+    }
 }
 
 pub fn settings_path(app: &AppHandle) -> PathBuf {
@@ -111,6 +129,33 @@ pub fn run() {
                 opencode_history: Mutex::new(Vec::new()),
             });
 
+            // Tray menu
+            use tauri::menu::{MenuBuilder, MenuItemBuilder};
+            if let Ok(menu) = MenuBuilder::new(app.handle())
+                .item(&MenuItemBuilder::with_id("restart", "Restart Services").build(app.handle())?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("show", "Show/Hide Window").build(app.handle())?)
+                .separator()
+                .item(&MenuItemBuilder::with_id("quit", "Quit").build(app.handle())?)
+                .build()
+            {
+                let _ = tray.set_menu(Some(menu));
+            }
+            let app_handle = app.handle().clone();
+            tray.on_menu_event(move |_app, event| {
+                match event.id.as_ref() {
+                    "restart" => { restart_dead_services_sync(&app_handle); }
+                    "show" => {
+                        if let Some(w) = _app.get_webview_window("main") {
+                            if w.is_visible().unwrap_or(false) { let _ = w.hide(); }
+                            else { let _ = w.show(); let _ = w.set_focus(); }
+                        }
+                    }
+                    "quit" => { _app.exit(0); }
+                    _ => {}
+                }
+            });
+
             // Heartbeat loop with auto-recovery
             let h = app.handle().clone();
             std::thread::spawn(move || {
@@ -122,13 +167,14 @@ pub fn run() {
                 }
             });
 
-            // Auto-recovery loop — restarts dead services every 60s
+            // Auto-recovery loop — restarts dead services
             let h_auto = app.handle().clone();
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 loop {
-                    std::thread::sleep(std::time::Duration::from_secs(60));
-                    rt.block_on(auto_recovery());
+                    let settings = load_settings(&h_auto);
+                    std::thread::sleep(std::time::Duration::from_secs(settings.recovery_interval_secs));
+                    rt.block_on(auto_recovery(&settings));
                 }
             });
 
@@ -205,6 +251,9 @@ pub fn run() {
             commands::toggle_autostart,
             commands::set_heartbeat,
             commands::get_heartbeat,
+            commands::restart_services,
+            commands::get_app_settings,
+            commands::set_app_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running PRAGYA");
@@ -290,9 +339,9 @@ async fn heartbeat_loop(handle: &AppHandle) {
 }
 
 /// Auto-recovery: restarts dead services
-async fn auto_recovery() {
+async fn auto_recovery(settings: &Settings) {
     // Ollama
-    let ollama_up = bridge::shell::execute("curl -s -o /dev/null -w '%{http_code}' http://localhost:11434/api/tags 2>/dev/null || echo '000'")
+    let ollama_up = bridge::shell::execute(&format!("curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{}/api/tags 2>/dev/null || echo '000'", settings.ollama_port))
         .map(|o| o.stdout.trim() == "200").unwrap_or(false);
     if !ollama_up {
         println!("Auto-recovery: starting Ollama...");
@@ -304,13 +353,37 @@ async fn auto_recovery() {
         .map(|o| o.stdout.trim() == "ok").unwrap_or(false);
     if !daemon_up {
         println!("Auto-recovery: starting search daemon...");
-        let _ = bridge::shell::execute("bash -l -c 'cd ~/fuche-coder && source venv/bin/activate && setsid python3 -u search.py --daemon > /dev/null 2>&1 &'");
+        let _ = bridge::shell::execute(&format!("bash -l -c 'cd {} && source venv/bin/activate && setsid python3 -u search.py --daemon > /dev/null 2>&1 &'", settings.fuche_coder_dir));
     }
 
     // TTS daemon
-    let tts_up = bridge::shell::execute("curl -s -o /dev/null -w '%{http_code}' http://localhost:8750 2>/dev/null || echo '000'")
+    let tts_up = bridge::shell::execute(&format!("curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{} 2>/dev/null || echo '000'", settings.tts_port))
         .map(|o| o.stdout.trim() == "200").unwrap_or(false);
     if !tts_up {
         println!("Auto-recovery: TTS daemon not responding (OK if not needed)");
     }
+
+    // Whisper.cpp
+    let whisper_up = bridge::shell::execute(&format!("curl -s -o /dev/null -w '%{{http_code}}' http://localhost:{} 2>/dev/null || echo '000'", settings.whisper_port))
+        .map(|o| o.stdout.trim() == "200").unwrap_or(false);
+    if !whisper_up {
+        println!("Auto-recovery: whisper.cpp not responding (OK if not needed)");
+    }
+}
+
+/// Sync helper for tray menu — spawns a thread with its own tokio runtime
+fn restart_dead_services_sync(handle: &tauri::AppHandle) {
+    let h = handle.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let settings = load_settings(&h);
+        rt.block_on(auto_recovery(&settings));
+        println!("Auto-recovery: manual restart triggered");
+    });
+}
+
+/// Public async entry for the restart_services Tauri command
+pub async fn restart_dead_services(app: &tauri::AppHandle) {
+    let settings = load_settings(app);
+    auto_recovery(&settings).await;
 }

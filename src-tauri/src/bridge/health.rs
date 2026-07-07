@@ -4,6 +4,7 @@ use serde::Serialize;
 pub struct DaemonHealth {
     pub wsl: ServiceHealth,
     pub tts: ServiceHealth,
+    pub whisper: ServiceHealth,
     pub opencode: ServiceHealth,
     pub cascade: ServiceHealth,
     pub ollama: ServiceHealth,
@@ -44,8 +45,8 @@ pub async fn check_all() -> DaemonHealth {
     let wsl_ok = super::shell::health_check();
     let tts_ok = super::tts::health();
 
-    let (oc, cc, ol, gpu, disk) = tokio::join!(
-        opencode_check(), cascade_check(), ollama_check(), gpu_check(), disk_check()
+    let (oc, cc, ol, wh, gpu, disk) = tokio::join!(
+        opencode_check(), cascade_check(), ollama_check(), whisper_check(), gpu_check(), disk_check()
     );
 
     let overall = if wsl_ok && tts_ok && oc.status == HealthStatus::Healthy {
@@ -55,6 +56,7 @@ pub async fn check_all() -> DaemonHealth {
     DaemonHealth {
         wsl: ServiceHealth { status: if wsl_ok { HealthStatus::Healthy } else { HealthStatus::Down }, label: "WSL".into(), detail: if wsl_ok { "Responding".into() } else { "Not reachable".into() } },
         tts: ServiceHealth { status: if tts_ok { HealthStatus::Healthy } else { HealthStatus::Degraded }, label: "TTS".into(), detail: if tts_ok { "fuche-tts found" } else { "Binary not found" }.into() },
+        whisper: wh,
         opencode: oc, cascade: cc, ollama: ol, gpu, disk, overall,
     }
 }
@@ -70,6 +72,7 @@ pub async fn check_all() -> DaemonHealth {
     DaemonHealth {
         wsl: ServiceHealth { status: HealthStatus::Down, label: "WSL".into(), detail: "Not available on Android".into() },
         tts: ServiceHealth { status: HealthStatus::Down, label: "TTS".into(), detail: "Not available on Android".into() },
+        whisper: ServiceHealth { status: HealthStatus::Down, label: "Whisper".into(), detail: "Not available on Android".into() },
         opencode: oc, cascade: cc, ollama: ol, gpu, disk, overall,
     }
 }
@@ -106,6 +109,21 @@ async fn ollama_check() -> ServiceHealth {
         Ok(out) if out.stdout.trim() == "200" => ServiceHealth { status: HealthStatus::Healthy, label: "Ollama".into(), detail: "API responding".into() },
         _ => ServiceHealth { status: HealthStatus::Degraded, label: "Ollama".into(), detail: "Not reachable".into() },
     }
+}
+
+#[cfg(not(target_os = "android"))]
+async fn whisper_check() -> ServiceHealth {
+    let r = super::shell::execute("curl -s -o /dev/null -w '%{http_code}' http://localhost:8760 2>/dev/null || echo '000'");
+    match r {
+        Ok(out) if out.stdout.trim() == "200" => ServiceHealth { status: HealthStatus::Healthy, label: "Whisper".into(), detail: "API responding".into() },
+        Ok(out) if out.stdout.trim() == "000" => ServiceHealth { status: HealthStatus::Degraded, label: "Whisper".into(), detail: "Port 8760 not reachable".into() },
+        _ => ServiceHealth { status: HealthStatus::Degraded, label: "Whisper".into(), detail: "Check failed".into() },
+    }
+}
+
+#[cfg(target_os = "android")]
+async fn whisper_check() -> ServiceHealth {
+    ServiceHealth { status: HealthStatus::Down, label: "Whisper".into(), detail: "Not available on Android".into() }
 }
 
 #[cfg(not(target_os = "android"))]

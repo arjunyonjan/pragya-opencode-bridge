@@ -36,6 +36,8 @@
         <div class="loading">scanning services...</div>
       </div>
       <div class="panel-footer">
+        <button class="panel-btn" id="restart-btn" title="Restart all dead services">⟳ Restart</button>
+        <button class="panel-btn" id="settings-btn" title="Settings">⚙</button>
         <button class="panel-btn" id="autostart-btn">Autostart: --</button>
         <span class="status-text" id="autostart-status"></span>
       </div>
@@ -158,6 +160,54 @@
       </div>
     </section>
   </main>
+
+  <!-- Settings Modal -->
+  <div id="settings-overlay" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <span>⚙ SETTINGS</span>
+        <button id="settings-close" class="close-icon">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-group">
+          <label>Heartbeat active</label>
+          <input type="checkbox" id="set-heartbeat" />
+        </div>
+        <div class="settings-group">
+          <label>Heartbeat interval (sec)</label>
+          <input type="number" id="set-hb-interval" min="10" max="300" />
+        </div>
+        <div class="settings-group">
+          <label>Recovery interval (sec)</label>
+          <input type="number" id="set-rec-interval" min="10" max="600" />
+        </div>
+        <div class="settings-group">
+          <label>Fuche coder directory</label>
+          <input type="text" id="set-fuche-dir" />
+        </div>
+        <div class="settings-group">
+          <label>Screenshot directory</label>
+          <input type="text" id="set-ss-dir" />
+        </div>
+        <div class="settings-group">
+          <label>Ollama port</label>
+          <input type="number" id="set-ollama-port" min="1" max="65535" />
+        </div>
+        <div class="settings-group">
+          <label>TTS port</label>
+          <input type="number" id="set-tts-port" min="1" max="65535" />
+        </div>
+        <div class="settings-group">
+          <label>Whisper port</label>
+          <input type="number" id="set-whisper-port" min="1" max="65535" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="settings-save" class="panel-btn">SAVE</button>
+        <span id="settings-status" class="status-text"></span>
+      </div>
+    </div>
+  </div>
 
   <footer>
     <span class="dim">shell bridge • TTS • opencode • OCR</span>

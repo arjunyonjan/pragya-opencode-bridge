@@ -1,7 +1,7 @@
 use crate::bridge::{shell, tts, opencode, health};
 #[cfg(not(target_os = "android"))]
 use crate::bridge::{rag, cascade};
-use crate::{AppState, HealthReport, ServiceReport, chrono_now, update_tray, HEARTBEAT_ACTIVE, save_settings, Settings};
+use crate::{AppState, HealthReport, ServiceReport, Settings, chrono_now, update_tray, HEARTBEAT_ACTIVE, save_settings, load_settings, restart_dead_services};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 
@@ -102,6 +102,7 @@ pub async fn health_check(app: AppHandle) -> Result<HealthReport, String> {
         services: vec![
             ServiceReport { label: "WSL".into(), status: format!("{:?}", dh.wsl.status), detail: dh.wsl.detail },
             ServiceReport { label: "TTS".into(), status: format!("{:?}", dh.tts.status), detail: dh.tts.detail },
+            ServiceReport { label: "Whisper".into(), status: format!("{:?}", dh.whisper.status), detail: dh.whisper.detail },
             ServiceReport { label: "Opencode".into(), status: format!("{:?}", dh.opencode.status), detail: dh.opencode.detail },
             ServiceReport { label: "Cascade".into(), status: format!("{:?}", dh.cascade.status), detail: dh.cascade.detail },
             ServiceReport { label: "Ollama".into(), status: format!("{:?}", dh.ollama.status), detail: dh.ollama.detail },
@@ -130,10 +131,29 @@ pub fn toggle_autostart(app: AppHandle) -> bool {
 #[tauri::command]
 pub fn set_heartbeat(active: bool, app: AppHandle) {
     HEARTBEAT_ACTIVE.store(active, std::sync::atomic::Ordering::Relaxed);
-    save_settings(&app, &Settings { heartbeat_active: active });
+    let mut s = load_settings(&app);
+    s.heartbeat_active = active;
+    save_settings(&app, &s);
 }
 
 #[tauri::command]
 pub fn get_heartbeat() -> bool {
     HEARTBEAT_ACTIVE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[tauri::command]
+pub async fn restart_services(app: AppHandle) -> String {
+    restart_dead_services(&app).await;
+    "done".into()
+}
+
+#[tauri::command]
+pub fn get_app_settings(app: AppHandle) -> Settings {
+    load_settings(&app)
+}
+
+#[tauri::command]
+pub fn set_app_settings(settings: Settings, app: AppHandle) {
+    HEARTBEAT_ACTIVE.store(settings.heartbeat_active, std::sync::atomic::Ordering::Relaxed);
+    save_settings(&app, &settings);
 }
