@@ -1,6 +1,15 @@
 let ocrCount = 0;
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Close button
+  document.getElementById('close-btn')?.addEventListener('click', () => {
+    try {
+      if (typeof __TAURI__ !== 'undefined' && __TAURI__.window) {
+        __TAURI__.window.getCurrent().close();
+      }
+    } catch(e) {}
+  });
+
   initTTS();
   initOpencode();
   initCascade();

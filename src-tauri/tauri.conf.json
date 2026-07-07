@@ -9,12 +9,13 @@
   "app": {
     "windows": [
       {
-        "title": "PRAGYA — Jarvis HUD",
+        "title": "PRAGYA · Yonjan Ventures",
         "width": 1200,
         "height": 800,
         "resizable": true,
         "fullscreen": false,
-        "center": true
+        "center": true,
+        "decorations": false
       }
     ],
     "security": {
