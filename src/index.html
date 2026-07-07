@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>opencode-bridge — Jarvis HUD</title>
+  <title>PRAGYA — Jarvis HUD</title>
   <link rel="stylesheet" href="style.css" />
   <script type="module" src="app.js"></script>
 </head>
@@ -11,7 +11,7 @@
   <div class="scanlines"></div>
 
   <header>
-    <h1><span class="cyan">◆</span> opencode-bridge <span class="dim">v0.2.0</span></h1>
+    <h1><span class="cyan">◆</span> PRAGYA <span class="dim">v0.2.0</span></h1>
     <div class="hud-status" id="hud-status">
       <span class="status-dot" id="status-dot"></span>
       <span id="status-text">initializing...</span>
@@ -139,6 +139,19 @@
           <button id="wsl-exec-btn">RUN</button>
         </div>
         <pre id="wsl-output" class="output-box"></pre>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-ocr">
+      <div class="panel-header">
+        <span class="panel-icon">⊞</span>
+        <span>SCREENSHOT OCR</span>
+        <span class="status-text" id="ocr-count">0</span>
+      </div>
+      <div class="panel-body">
+        <div id="ocr-list" class="output-box">
+          <div class="dim">Watching ai-screenshots/...</div>
+        </div>
       </div>
     </section>
   </main>

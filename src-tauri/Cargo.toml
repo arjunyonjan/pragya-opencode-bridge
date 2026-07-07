@@ -1,12 +1,12 @@
 [package]
-name = "opencode-bridge"
+name = "pragya"
 version = "0.1.0"
 edition = "2021"
 
 [package.metadata]
 
 [lib]
-name = "opencode_bridge_lib"
+name = "pragya_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

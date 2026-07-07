@@ -10,10 +10,20 @@ pub struct WslOutput {
 }
 
 pub fn execute(command: &str) -> Result<WslOutput, String> {
-    let output: Output = Command::new("wsl")
-        .args(["--", command])
-        .output()
-        .map_err(|e| format!("WSL exec failed: {}", e))?;
+    exec_args_internal(&["bash", "-l", "-c", command])
+}
+
+pub fn execute_simple(args: &[&str]) -> Result<WslOutput, String> {
+    exec_args_internal(args)
+}
+
+fn exec_args_internal(args: &[&str]) -> Result<WslOutput, String> {
+    let mut cmd = Command::new("wsl");
+    cmd.arg("--");
+    for a in args {
+        cmd.arg(a);
+    }
+    let output: Output = cmd.output().map_err(|e| format!("WSL exec failed: {}", e))?;
 
     Ok(WslOutput {
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
@@ -24,5 +34,5 @@ pub fn execute(command: &str) -> Result<WslOutput, String> {
 }
 
 pub fn health_check() -> bool {
-    execute("echo 'ok'").map(|o| o.stdout.trim() == "ok").unwrap_or(false)
+    execute("echo ok").map(|o| o.stdout.trim() == "ok").unwrap_or(false)
 }

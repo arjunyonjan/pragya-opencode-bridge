@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default capabilities for opencode-bridge",
+  "description": "Default capabilities for PRAGYA",
   "windows": ["main"],
   "permissions": [
     "core:default",

@@ -1,9 +1,4 @@
-import { initTTS } from './panels/tts.js';
-import { initOpencode } from './panels/opencode.js';
-import { initCascade } from './panels/cascade.js';
-import { initRag } from './panels/rag.js';
-import { initWsl } from './panels/wsl.js';
-import { initHealth, initHeartbeat, initAutostart, refreshHealth } from './panels/health.js';
+let ocrCount = 0;
 
 document.addEventListener('DOMContentLoaded', () => {
   initTTS();
@@ -14,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initHealth();
   initHeartbeat();
   initAutostart();
+  initOcr();
 
   setInterval(() => {
     const now = new Date();
@@ -22,3 +18,281 @@ document.addEventListener('DOMContentLoaded', () => {
 
   refreshHealth(false);
 });
+
+// ── OCR panel ──
+
+function initOcr() {
+  listen('ocr-result', (e) => {
+    const r = e.payload;
+    ocrCount++;
+    document.getElementById('ocr-count').textContent = ocrCount;
+    const list = document.getElementById('ocr-list');
+    const entry = document.createElement('div');
+    entry.className = 'ocr-entry';
+    entry.innerHTML = `<div class="ocr-file">${r.file}</div>
+      <div class="ocr-text">${r.ocr_text ? r.ocr_text.slice(0, 120) : '<span class="dim">no text</span>'}</div>
+      <div class="ocr-moon dim">${r.moondream ? r.moondream.slice(0, 120) : ''}</div>`;
+    list.prepend(entry);
+  });
+}
+
+// ── TTS panel ──
+
+function initTTS() {
+  const input = document.getElementById('tts-input');
+  const btn = document.getElementById('tts-speak');
+  const status = document.getElementById('tts-status');
+  const backend = document.getElementById('tts-backend');
+  const preset = document.getElementById('tts-preset');
+  const speed = document.getElementById('tts-speed');
+  const fx = document.getElementById('tts-fx');
+
+  function speak() {
+    const text = input.value.trim();
+    if (!text) return;
+    status.textContent = 'speaking...';
+    invoke('tts_speak_with', {
+      text,
+      backend: backend.value,
+      preset: preset.value,
+      speed: parseFloat(speed.value),
+      fx: fx.value,
+    }).then(r => {
+      status.textContent = r.success ? `done (${r.elapsed}s)` : `error: ${r.error}`;
+    });
+  }
+
+  btn.addEventListener('click', speak);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') speak(); });
+  input.focus();
+}
+
+// ── Opencode panel ──
+
+function initOpencode() {
+  const input = document.getElementById('opencode-input');
+  const btn = document.getElementById('opencode-send');
+  const output = document.getElementById('opencode-output');
+  const indicator = document.getElementById('stream-indicator');
+  const historyDiv = document.getElementById('opencode-history');
+  const historyToggle = document.getElementById('history-toggle');
+  const clearBtn = document.getElementById('clear-history-btn');
+  const streamToggle = document.getElementById('stream-toggle');
+
+  let streaming = false;
+
+  listen('opencode-stream-line', (e) => {
+    if (streamToggle.checked && streaming) {
+      output.textContent += e.payload;
+      output.scrollTop = output.scrollHeight;
+    }
+  });
+
+  listen('opencode-stream-done', () => {
+    streaming = false;
+    indicator.textContent = '';
+  });
+
+  async function query() {
+    const q = input.value.trim();
+    if (!q || streaming) return;
+    streaming = true;
+    indicator.textContent = 'streaming...';
+    output.textContent = '';
+
+    try {
+      const r = await invoke('opencode_query', { query: q });
+      if (!streamToggle.checked) {
+        output.textContent = r.stdout || r.stderr || '(empty)';
+      }
+    } catch (err) {
+      output.textContent = `Error: ${err}`;
+    }
+    streaming = false;
+    indicator.textContent = '';
+  }
+
+  btn.addEventListener('click', query);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') query(); });
+
+  clearBtn.addEventListener('click', () => {
+    invoke('clear_opencode_history');
+    historyDiv.innerHTML = '';
+  });
+
+  historyToggle.addEventListener('change', () => {
+    if (historyToggle.checked) {
+      invoke('get_opencode_history').then(h => {
+        historyDiv.innerHTML = h.map(e =>
+          `<div class="hist-entry"><b>${e.query}</b> <span class="dim">${e.timestamp}</span><pre>${e.stdout.slice(0, 200)}</pre></div>`
+        ).join('');
+      });
+      historyDiv.style.display = 'block';
+      output.style.display = 'none';
+    } else {
+      historyDiv.style.display = 'none';
+      output.style.display = 'block';
+    }
+  });
+}
+
+// ── Cascade panel ──
+
+function initCascade() {
+  const input = document.getElementById('cascade-input');
+  const btn = document.getElementById('cascade-send');
+  const output = document.getElementById('cascade-output');
+  const status = document.getElementById('cascade-status');
+
+  async function query() {
+    const q = input.value.trim();
+    if (!q) return;
+    status.textContent = 'querying...';
+    output.textContent = '';
+    try {
+      const r = await invoke('cascade_query', { query: q });
+      output.textContent = r.output || r.error || '(empty)';
+    } catch (err) {
+      output.textContent = `Error: ${err}`;
+    }
+    status.textContent = '';
+  }
+
+  btn.addEventListener('click', query);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') query(); });
+}
+
+// ── RAG panel ──
+
+function initRag() {
+  const input = document.getElementById('rag-input');
+  const btn = document.getElementById('rag-search-btn');
+  const results = document.getElementById('rag-results');
+  const ingestInput = document.getElementById('rag-ingest-input');
+  const ingestBtn = document.getElementById('rag-ingest-btn');
+
+  btn.addEventListener('click', async () => {
+    const q = input.value.trim();
+    if (!q) return;
+    results.innerHTML = '<div class="loading">searching...</div>';
+    try {
+      const r = await invoke('rag_search', { query: q, limit: 5 });
+      results.innerHTML = '';
+      if (r.results) {
+        r.results.forEach(res => {
+          const div = document.createElement('div');
+          div.className = 'rag-result';
+          div.innerHTML = `<div class="rag-score">${(res.score * 100).toFixed(0)}%</div>
+            <div class="rag-snippet">${res.snippet}</div>
+            <div class="rag-source dim">${res.source || ''}</div>`;
+          results.appendChild(div);
+        });
+      } else {
+        results.innerHTML = `<div class="dim">${r.error || 'no results'}</div>`;
+      }
+    } catch (err) {
+      results.innerHTML = `<div class="dim">Error: ${err}</div>`;
+    }
+  });
+
+  ingestBtn.addEventListener('click', async () => {
+    const p = ingestInput.value.trim();
+    if (!p) return;
+    ingestBtn.textContent = 'ingesting...';
+    try {
+      const r = await invoke('rag_ingest', { path: p });
+      ingestBtn.textContent = r.success ? 'done' : `error: ${r.error}`;
+    } catch (err) {
+      ingestBtn.textContent = 'error';
+    }
+    setTimeout(() => { ingestBtn.textContent = 'INGEST'; }, 2000);
+  });
+}
+
+// ── WSL panel ──
+
+function initWsl() {
+  const input = document.getElementById('wsl-input');
+  const btn = document.getElementById('wsl-exec-btn');
+  const output = document.getElementById('wsl-output');
+
+  async function run() {
+    const cmd = input.value.trim();
+    if (!cmd) return;
+    output.textContent = '$ ' + cmd + '\n';
+    try {
+      const r = await invoke('wsl_exec', { command: cmd });
+      output.textContent += r.stdout || r.stderr || '(empty)';
+    } catch (err) {
+      output.textContent += `Error: ${err}`;
+    }
+  }
+
+  btn.addEventListener('click', run);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+}
+
+// ── Health panel ──
+
+function initHealth() {
+  const refreshBtn = document.getElementById('refresh-health');
+  refreshBtn.addEventListener('click', () => refreshHealth(true));
+}
+
+function initHeartbeat() {
+  const toggle = document.getElementById('heartbeat-toggle');
+  invoke('get_heartbeat').then(active => toggle.checked = active);
+  toggle.addEventListener('change', () => {
+    invoke('set_heartbeat', { active: toggle.checked });
+  });
+}
+
+function initAutostart() {
+  const btn = document.getElementById('autostart-btn');
+  invoke('get_autostart').then(enabled => {
+    btn.textContent = `Autostart: ${enabled ? 'ON' : 'OFF'}`;
+  });
+  btn.addEventListener('click', () => {
+    invoke('toggle_autostart').then(enabled => {
+      btn.textContent = `Autostart: ${enabled ? 'ON' : 'OFF'}`;
+    });
+  });
+}
+
+async function refreshHealth(showLoading) {
+  const body = document.getElementById('health-body');
+  const dot = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  if (showLoading) body.innerHTML = '<div class="loading">scanning services...</div>';
+  try {
+    const r = await invoke('health_check');
+    body.innerHTML = '';
+    r.services.forEach(s => {
+      const div = document.createElement('div');
+      div.className = 'health-row';
+      div.innerHTML = `<span class="health-dot ${s.status.toLowerCase()}"></span>
+        <span class="health-label">${s.label}</span>
+        <span class="health-detail">${s.detail}</span>`;
+      body.appendChild(div);
+    });
+    dot.className = `status-dot ${r.overall.toLowerCase()}`;
+    text.textContent = r.overall;
+  } catch (err) {
+    body.innerHTML = `<div class="dim">Error: ${err}</div>`;
+  }
+}
+
+// ── Event helpers (mock Tauri for dev) ──
+
+function listen(event, cb) {
+  if (typeof __TAURI__ !== 'undefined' && __TAURI__.event) {
+    __TAURI__.event.listen(event, cb);
+  }
+}
+
+function invoke(cmd, args) {
+  if (typeof __TAURI__ !== 'undefined' && __TAURI__.core) {
+    return __TAURI__.core.invoke(cmd, args);
+  }
+  return Promise.reject('Tauri API not available');
+}

@@ -1,6 +1,6 @@
 mod bridge;
 
-use bridge::{wsl, tts, opencode, rag, cascade, health};
+use bridge::{wsl, tts, opencode, rag, cascade, health, ocr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -110,6 +110,31 @@ pub fn run() {
                 }
             });
 
+            let h3 = app.handle().clone();
+            std::thread::spawn(move || {
+                let ss_dir = r"C:\Users\ACER\OneDrive\ai-screenshots";
+                let mut processed: std::collections::HashSet<String> = std::collections::HashSet::new();
+                loop {
+                    if let Ok(entries) = std::fs::read_dir(ss_dir) {
+                        for entry in entries.flatten() {
+                            let path = entry.path();
+                            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                                if !["jpg", "jpeg", "png"].contains(&ext.to_lowercase().as_str()) { continue; }
+                                let fname = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                                let fname_clone = fname.clone();
+                                if processed.insert(fname) {
+                                    std::thread::sleep(std::time::Duration::from_secs(2));
+                                    println!("New screenshot detected: {fname_clone}");
+                                    let result = ocr::process_screenshot(&path.to_string_lossy());
+                                    let _ = h3.emit("ocr-result", &result);
+                                }
+                            }
+                        }
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(15));
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -130,7 +155,7 @@ pub fn run() {
             get_heartbeat,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running opencode-bridge");
+        .expect("error while running PRAGYA");
 }
 
 // ── Commands ──

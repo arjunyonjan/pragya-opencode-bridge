@@ -1,5 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    opencode_bridge_lib::run()
+    pragya_lib::run()
 }
