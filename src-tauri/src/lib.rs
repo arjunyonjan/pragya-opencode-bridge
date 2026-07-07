@@ -1,36 +1,37 @@
 mod bridge;
+mod commands;
 
-use bridge::{wsl, tts, opencode, rag, cascade, health, ocr};
+use bridge::{opencode, health, ocr};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tauri_plugin_autostart::ManagerExt;
+// ManagerExt used in commands.rs
 use serde::{Deserialize, Serialize};
 
-static HEARTBEAT_ACTIVE: AtomicBool = AtomicBool::new(true);
+pub static HEARTBEAT_ACTIVE: AtomicBool = AtomicBool::new(true);
 
 #[derive(Serialize, Deserialize)]
-struct Settings {
-    heartbeat_active: bool,
+pub struct Settings {
+    pub heartbeat_active: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self { Self { heartbeat_active: true } }
 }
 
-fn settings_path(app: &AppHandle) -> PathBuf {
+pub fn settings_path(app: &AppHandle) -> PathBuf {
     app.path().app_config_dir().unwrap_or_default().join("settings.json")
 }
 
-fn load_settings(app: &AppHandle) -> Settings {
+pub fn load_settings(app: &AppHandle) -> Settings {
     let path = settings_path(app);
     std::fs::read_to_string(path).ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
 }
 
-fn save_settings(app: &AppHandle, settings: &Settings) {
+pub fn save_settings(app: &AppHandle, settings: &Settings) {
     if let Ok(s) = serde_json::to_string_pretty(settings) {
         let path = settings_path(app);
         if let Some(parent) = path.parent() {
@@ -92,6 +93,7 @@ pub fn run() {
                 opencode_history: Mutex::new(Vec::new()),
             });
 
+            // Heartbeat loop
             let h = app.handle().clone();
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
@@ -102,6 +104,7 @@ pub fn run() {
                 }
             });
 
+            // TTS tick loop
             let h2 = app.handle().clone();
             std::thread::spawn(move || {
                 loop {
@@ -110,174 +113,96 @@ pub fn run() {
                 }
             });
 
+            // Screenshot watcher — lazy 10s loop with halt mode, no TTS noise
             let h3 = app.handle().clone();
             std::thread::spawn(move || {
                 let ss_dir = r"C:\Users\ACER\OneDrive\ai-screenshots";
-                let mut processed: std::collections::HashSet<String> = std::collections::HashSet::new();
+                let log_path = r"C:\Users\ACER\OneDrive\Obsidian Vault\system\auto-ocr.md";
+                let mut processed: std::collections::HashSet<String> = std::fs::read_to_string(log_path)
+                    .ok().map(|s| s.lines().filter_map(|l| l.split('|').nth(1)).map(|s| s.trim().to_string()).collect())
+                    .unwrap_or_default();
+                println!("OCR: {} files known", processed.len());
                 loop {
-                    if let Ok(entries) = std::fs::read_dir(ss_dir) {
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                                if !["jpg", "jpeg", "png"].contains(&ext.to_lowercase().as_str()) { continue; }
-                                let fname = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                                let fname_clone = fname.clone();
-                                if processed.insert(fname) {
-                                    std::thread::sleep(std::time::Duration::from_secs(2));
-                                    println!("New screenshot detected: {fname_clone}");
-                                    let result = ocr::process_screenshot(&path.to_string_lossy());
-                                    let _ = h3.emit("ocr-result", &result);
-                                }
-                            }
-                        }
+                    for entry in std::fs::read_dir(ss_dir).into_iter().flatten().flatten() {
+                        let path = entry.path();
+                        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+                        if !["jpg", "jpeg", "png"].contains(&ext.as_str()) { continue; }
+                        let fname = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        let fname_clone = fname.clone();
+                        if !processed.insert(fname) { continue; }
+                        let h = h3.clone();
+                        let p = path.to_string_lossy().to_string();
+                        std::thread::spawn(move || {
+                            let r = ocr::process_screenshot(&p);
+                            let _ = h.emit("ocr-result", &r);
+                            if r.success { println!("OCR done: {fname_clone}"); }
+                        });
                     }
-                    std::thread::sleep(std::time::Duration::from_secs(15));
+                    std::thread::sleep(std::time::Duration::from_secs(10));
                 }
             });
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            wsl_exec,
-            tts_speak,
-            tts_speak_with,
-            opencode_status,
-            opencode_query,
-            get_opencode_history,
-            clear_opencode_history,
-            cascade_query,
-            rag_search,
-            rag_ingest,
-            health_check,
-            get_autostart,
-            toggle_autostart,
-            set_heartbeat,
-            get_heartbeat,
+            commands::wsl_exec,
+            commands::tts_speak,
+            commands::tts_speak_with,
+            commands::opencode_status,
+            commands::opencode_query,
+            commands::get_opencode_history,
+            commands::clear_opencode_history,
+            commands::cascade_query,
+            commands::rag_search,
+            commands::rag_ingest,
+            commands::health_check,
+            commands::get_autostart,
+            commands::toggle_autostart,
+            commands::set_heartbeat,
+            commands::get_heartbeat,
         ])
         .run(tauri::generate_context!())
         .expect("error while running PRAGYA");
 }
 
-// ── Commands ──
-
-#[tauri::command]
-fn wsl_exec(command: String) -> Result<wsl::WslOutput, String> {
-    wsl::execute(&command)
-}
-
-#[tauri::command]
-async fn tts_speak(text: String) -> tts::TtsResult {
-    tts::speak(&text).await
-}
-
-#[tauri::command]
-async fn tts_speak_with(text: String, backend: Option<String>, preset: Option<String>, speed: Option<f64>, fx: Option<String>) -> tts::TtsResult {
-    tts::speak_with(&text, &backend.unwrap_or("kitten".into()), &preset.unwrap_or("jarvis".into()), speed.unwrap_or(1.25), &fx.unwrap_or_default()).await
-}
-
-#[tauri::command]
-fn opencode_status() -> opencode::Status {
-    opencode::check_status()
-}
-
-#[tauri::command]
-async fn opencode_query(query: String, app: AppHandle) -> Result<opencode::Session, String> {
-    let session = opencode::run_query(&query).await;
-    if let Some(state) = app.try_state::<AppState>() {
-        if let Ok(mut hist) = state.opencode_history.lock() {
-            hist.push(opencode::HistoryEntry {
-                query: query.clone(),
-                stdout: session.stdout.clone(),
-                stderr: session.stderr.clone(),
-                success: session.success,
-                timestamp: chrono_now(),
-            });
-        }
-    }
-    Ok(session)
-}
-
-#[tauri::command]
-fn get_opencode_history(state: State<'_, AppState>) -> Vec<opencode::HistoryEntry> {
-    state.opencode_history.lock().unwrap_or_else(|e| e.into_inner()).clone()
-}
-
-#[tauri::command]
-fn clear_opencode_history(state: State<'_, AppState>) {
-    if let Ok(mut h) = state.opencode_history.lock() { h.clear(); }
-}
-
-#[tauri::command]
-async fn cascade_query(query: String) -> cascade::CascadeResult {
-    cascade::run_query(&query).await
-}
-
-#[tauri::command]
-async fn rag_search(query: String, limit: Option<usize>) -> rag::RagResult {
-    rag::search(&query, limit).await
-}
-
-#[tauri::command]
-async fn rag_ingest(path: String) -> rag::RagResult {
-    rag::ingest(&path).await
-}
-
-#[tauri::command]
-async fn health_check(app: AppHandle) -> Result<HealthReport, String> {
-    let dh = health::check_all().await;
-    if let Some(state) = app.try_state::<AppState>() {
-        update_tray(&app, &state, &dh.overall);
-    }
-    Ok(HealthReport {
-        overall: format!("{:?}", dh.overall),
-        services: vec![
-            ServiceReport { label: "WSL".into(), status: format!("{:?}", dh.wsl.status), detail: dh.wsl.detail },
-            ServiceReport { label: "TTS".into(), status: format!("{:?}", dh.tts.status), detail: dh.tts.detail },
-            ServiceReport { label: "Opencode".into(), status: format!("{:?}", dh.opencode.status), detail: dh.opencode.detail },
-            ServiceReport { label: "Cascade".into(), status: format!("{:?}", dh.cascade.status), detail: dh.cascade.detail },
-            ServiceReport { label: "Ollama".into(), status: format!("{:?}", dh.ollama.status), detail: dh.ollama.detail },
-            ServiceReport { label: "GPU".into(), status: format!("{:?}", dh.gpu.status), detail: format!("{} ({} / {} MB)", dh.gpu.gpu_name, dh.gpu.vram_used_mb, dh.gpu.vram_total_mb) },
-            ServiceReport { label: "Disk".into(), status: format!("{:?}", dh.disk.status), detail: format!("{:.1} / {:.1} GB ({:.0}%)", dh.disk.free_gb, dh.disk.total_gb, dh.disk.usage_pct) },
-        ],
-    })
-}
-
-#[tauri::command]
-fn get_autostart(app: AppHandle) -> bool {
-    app.autolaunch().is_enabled().unwrap_or(false)
-}
-
-#[tauri::command]
-fn toggle_autostart(app: AppHandle) -> bool {
-    if app.autolaunch().is_enabled().unwrap_or(false) {
-        let _ = app.autolaunch().disable();
-        false
-    } else {
-        let _ = app.autolaunch().enable();
-        true
-    }
-}
-
-#[tauri::command]
-fn set_heartbeat(active: bool, app: AppHandle) {
-    HEARTBEAT_ACTIVE.store(active, Ordering::Relaxed);
-    save_settings(&app, &Settings { heartbeat_active: active });
-}
-
-#[tauri::command]
-fn get_heartbeat() -> bool {
-    HEARTBEAT_ACTIVE.load(Ordering::Relaxed)
-}
-
 // ── Helpers ──
 
-fn chrono_now() -> String {
+pub fn chrono_now() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-    format!("{}", d.as_secs())
+    let secs = d.as_secs();
+    let days = secs / 86400;
+    let mut y = 1970i64;
+    let mut remaining = days as i64;
+    loop {
+        let days_in_year = if is_leap(y) { 366 } else { 365 };
+        if remaining < days_in_year { break; }
+        remaining -= days_in_year;
+        y += 1;
+    }
+    let month_days = if is_leap(y) { &LEAP_MONTH_DAYS[..] } else { &NORM_MONTH_DAYS[..] };
+    let mut m = 0;
+    for &md in month_days {
+        if remaining < md as i64 { break; }
+        remaining -= md as i64;
+        m += 1;
+    }
+    let day = remaining + 1;
+    let time = secs % 86400;
+    let h = time / 3600;
+    let min = (time % 3600) / 60;
+    let s = time % 60;
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", y, m + 1, day, h, min, s)
 }
 
-fn load_tray_png(path: std::path::PathBuf) -> tauri::image::Image<'static> {
+const NORM_MONTH_DAYS: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const LEAP_MONTH_DAYS: [u32; 12] = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+fn is_leap(y: i64) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
+}
+
+pub fn load_tray_png(path: std::path::PathBuf) -> tauri::image::Image<'static> {
     match std::fs::read(&path) {
         Ok(bytes) => {
             if let Ok(img) = image::load_from_memory(&bytes) {
@@ -293,7 +218,7 @@ fn load_tray_png(path: std::path::PathBuf) -> tauri::image::Image<'static> {
     }
 }
 
-fn update_tray(handle: &AppHandle, state: &State<AppState>, overall: &health::HealthStatus) {
+pub fn update_tray(handle: &AppHandle, state: &State<AppState>, overall: &health::HealthStatus) {
     let name = match overall {
         health::HealthStatus::Healthy => "tray-green.png",
         health::HealthStatus::Degraded => "tray-amber.png",

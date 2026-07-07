@@ -37,11 +37,13 @@ pub fn check_status() -> Status {
 pub async fn run_query(query: &str) -> Session {
     let command = format!("cd ~ && opencode '{}'", query.replace('\'', "'\\''"));
     let c = command.clone();
-    let result = tokio::task::spawn_blocking(move || super::wsl::execute(&c))
-        .await.unwrap_or_else(|_| Err("task panic".into()));
+    let fut = tokio::task::spawn_blocking(move || super::wsl::execute_timeout(&["bash", "-l", "-c", &c], 10));
+    let result = tokio::time::timeout(std::time::Duration::from_secs(12), fut).await;
 
     match result {
-        Ok(out) => Session { command, stdout: out.stdout, stderr: out.stderr, success: out.success },
-        Err(e) => Session { command, stdout: String::new(), stderr: e, success: false },
+        Ok(Ok(Ok(out))) => Session { command, stdout: out.stdout, stderr: out.stderr, success: out.success },
+        Ok(Ok(Err(e))) => Session { command, stdout: String::new(), stderr: e, success: false },
+        Ok(Err(_)) => Session { command, stdout: String::new(), stderr: "task panic".into(), success: false },
+        Err(_) => Session { command, stdout: String::new(), stderr: "HALT: opencode query timed out (>10s)".into(), success: false },
     }
 }

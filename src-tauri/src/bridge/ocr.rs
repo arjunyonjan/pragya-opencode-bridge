@@ -22,29 +22,28 @@ fn win_to_wsl(path: &str) -> String {
 
 pub fn run_tesseract(path: &str) -> String {
     let wsl = win_to_wsl(path);
-    match super::wsl::execute_simple(&["tesseract", &wsl, "stdout", "-l", "eng"]) {
+    match super::wsl::execute_timeout(&["tesseract", &wsl, "stdout", "-l", "eng"], 10) {
         Ok(out) => {
             let lines: Vec<&str> = out.stdout.lines().filter(|l| !l.trim().is_empty()).collect();
             if lines.is_empty() { return String::new(); }
             let text = lines.join(" ");
             if text.len() > 500 { text[..500].to_string() } else { text }
         }
-        Err(_) => String::new(),
+        Err(e) => { println!("Tesseract timeout: {e}"); String::new() }
     }
 }
 
 pub fn run_moondream(path: &str) -> String {
     let wsl = win_to_wsl(path);
     let start = std::time::Instant::now();
-    // strip ANSI escape codes from streaming output
     let cmd = format!("ollama run moondream 'describe {}' 2>/dev/null", wsl);
-    let result = match super::wsl::execute(&cmd) {
+    let result = match super::wsl::execute_timeout(&["bash", "-l", "-c", &cmd], 10) {
         Ok(out) => {
             let cleaned = strip_ansi(&out.stdout);
             let desc = cleaned.trim().to_string();
             if desc.len() > 300 { desc[..300].to_string() } else { desc }
         }
-        Err(_) => String::new(),
+        Err(e) => { println!("Moondream timeout: {e}"); String::new() }
     };
     println!("moondream took {:?}", start.elapsed());
     result
