@@ -1,13 +1,44 @@
 mod bridge;
 
 use bridge::{wsl, tts, opencode, rag, cascade, health};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 static HEARTBEAT_ACTIVE: AtomicBool = AtomicBool::new(true);
+
+#[derive(Serialize, Deserialize)]
+struct Settings {
+    heartbeat_active: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self { Self { heartbeat_active: true } }
+}
+
+fn settings_path(app: &AppHandle) -> PathBuf {
+    app.path().app_config_dir().unwrap_or_default().join("settings.json")
+}
+
+fn load_settings(app: &AppHandle) -> Settings {
+    let path = settings_path(app);
+    std::fs::read_to_string(path).ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn save_settings(app: &AppHandle, settings: &Settings) {
+    if let Ok(s) = serde_json::to_string_pretty(settings) {
+        let path = settings_path(app);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(path, s);
+    }
+}
 
 pub struct AppState {
     pub tray_icon: Mutex<tauri::tray::TrayIcon>,
@@ -36,6 +67,9 @@ pub fn run() {
             None,
         ))
         .setup(|app| {
+            let settings = load_settings(app.handle());
+            HEARTBEAT_ACTIVE.store(settings.heartbeat_active, Ordering::Relaxed);
+
             let icon = load_tray_png(app.path().resource_dir().unwrap_or_default().join("icons/tray-green.png"));
             let tray = app.tray_by_id("main").expect("tray icon not found in config");
             let tray_clone = tray.clone();
@@ -200,8 +234,9 @@ fn toggle_autostart(app: AppHandle) -> bool {
 }
 
 #[tauri::command]
-fn set_heartbeat(active: bool) {
+fn set_heartbeat(active: bool, app: AppHandle) {
     HEARTBEAT_ACTIVE.store(active, Ordering::Relaxed);
+    save_settings(&app, &Settings { heartbeat_active: active });
 }
 
 #[tauri::command]
